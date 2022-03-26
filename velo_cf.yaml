@@ -183,7 +183,7 @@ Resources:
         # Properties:
             # #Domain: vpc
             # #!Ref pVpcID
-            # AllocationId : eipalloc-0ed8457dc85a5a754
+            # AllocationId : <enter eipalloc-xxxxxxxxx>
             # InstanceId: !Ref rVelociraptor    
     
 Outputs:
