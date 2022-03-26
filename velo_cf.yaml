@@ -1,0 +1,195 @@
+#Author: Bryant Cabantac
+#https://github.com/bcabantac/velocloudformation
+
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+    This stack deploys velociraptor
+
+Parameters:
+
+    pSshKeyName:
+        Description: Amazon EC2 Key Pair for Velociraptor instance
+        Type: "AWS::EC2::KeyPair::KeyName"
+
+    pVpcID:
+        Description: VPC ID to deploy Velociraptor instance to
+        Type: "AWS::EC2::VPC::Id"
+
+    pSubnetID:
+        Description: Subnet ID to deploy Velociraptor instance to
+        Type: "AWS::EC2::Subnet::Id"
+
+    pInstanceType:
+        Description: Velociraptor EC2 instance types
+        Type: String
+        Default: t2.medium
+        AllowedValues:
+            - t2.micro
+            - t2.nano
+            - t2.micro
+            - t2.small
+            - t2.medium
+
+Resources:
+
+    rPublicAccessSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            VpcId: !Ref pVpcID
+            GroupDescription: Allows SSH, HTTP, and HTTPS access to Velociraptor instance
+            GroupName: !Sub '${AWS::StackName}-velociraptor-ssh-access2'
+            SecurityGroupIngress:
+                -
+                    CidrIp: '0.0.0.0/0'
+                    Description: 'Replace this rule on more strict one'
+                    FromPort: 22
+                    ToPort: 22
+                    IpProtocol: tcp        
+                -
+                    CidrIp: '0.0.0.0/0'
+                    Description: 'HTTPS web GUI'
+                    FromPort: 443
+                    ToPort: 443
+                    IpProtocol: tcp    
+                -
+                    CidrIp: '0.0.0.0/0'
+                    Description: 'Agent Front End'
+                    FromPort: 80
+                    ToPort: 80
+                    IpProtocol: tcp                        
+            Tags:
+                -
+                    Key: Name
+                    Value: !Sub '${AWS::StackName}-velociraptor-ssh-access'
+
+    
+    rVelociraptorInstanceRole:
+        Type: 'AWS::IAM::Role'
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    -
+                        Effect: Allow
+                        Principal:
+                            Service:
+                                - ec2.amazonaws.com
+                        Action:
+                            - 'sts:AssumeRole'
+            # for SSM
+            # ManagedPolicyArns:
+                # - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+
+    rVelociraptorInstanceProfile:
+        Type: AWS::IAM::InstanceProfile
+        Properties:
+            Path: /
+            Roles:
+                - !Ref rVelociraptorInstanceRole
+    
+    rVelociraptorPolicy:
+        Type: "AWS::IAM::Policy"
+        Properties:
+          PolicyName: VelociraptorPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Action: s3:GetObject
+                Effect: Allow
+                Resource: !Sub "arn:aws:s3:::velocloudformation/*"
+
+              -
+                Action: s3:ListBucket
+                Effect: Allow
+                Resource: !Sub "arn:aws:s3:::velocloudformation"
+
+          Roles:
+                - !Ref rVelociraptorInstanceRole  
+
+    rVelociraptor:
+        Type: AWS::EC2::Instance
+        Properties:
+            # Amazon Linux 2 AMI ap-souteast-2
+            IamInstanceProfile: !Ref rVelociraptorInstanceProfile
+            ImageId: ami-07c3ee614638f120d #default AL2 AMI - update as necessary
+            KeyName: !Sub '${pSshKeyName}'
+            InstanceType: !Sub '${pInstanceType}'
+            UserData:
+                Fn::Base64:
+                    Fn::Join: [ "", [
+                        "#!/bin/bash -xe",
+                        "\n",
+                        "sudo mkdir /opt/velociraptor",
+                        "\n",
+                        "sudo aws s3 cp s3://velocloudformation/server.config.yaml /opt/velociraptor/",
+                        "\n",
+                        "sudo wget https://github.com/Velocidex/velociraptor/releases/download/v0.6.3/velociraptor-v0.6.3-linux-amd64 -P /opt/velociraptor/",
+                        "\n",
+                        "sudo chmod +x /opt/velociraptor/velociraptor-v0.6.3-linux-amd64",
+                        "\n",
+                        "sudo touch /lib/systemd/system/velociraptor.service",
+                        "\n",
+                        "sudo bash -c 'echo [Unit] >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo Description=Velociraptor linux amd64 >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo After=syslog.target network.target >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo \n >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo [Service] >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo Type=simple >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo Restart=always >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo RestartSec=120 >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo LimitNOFILE=20000 >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo Environment=LANG=en_US.UTF-8 >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo ExecStart=/opt/velociraptor/velociraptor-v0.6.3-linux-amd64 --config /opt/velociraptor/server.config.yaml frontend -v >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo \n >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo [Install] >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo bash -c 'echo WantedBy=multi-user.target >> /lib/systemd/system/velociraptor.service'",
+                        "\n",
+                        "sudo systemctl daemon-reload",
+                        "\n",
+                        "sudo systemctl enable --now velociraptor",
+                        ]
+                      ]
+
+            NetworkInterfaces:
+                -
+                    AssociatePublicIpAddress: true
+                    DeviceIndex: "0"
+                    GroupSet:
+                        - !Ref rPublicAccessSecurityGroup
+                    SubnetId: !Ref pSubnetID
+            Tags:
+                -
+                    Key: Name
+                    Value: !Sub '${AWS::StackName}-velociraptor2'
+
+    # rElasticIP:
+        # #Type: AWS::EC2::EIP
+        # Type: AWS::EC2::EIPAssociation
+        # Properties:
+            # #Domain: vpc
+            # #!Ref pVpcID
+            # AllocationId : eipalloc-0ed8457dc85a5a754
+            # InstanceId: !Ref rVelociraptor    
+    
+Outputs:
+
+    VelociraptorPublicHostname:
+        Description: Velociraptor public hostname
+        Value: !GetAtt rVelociraptor.PublicDnsName
+        Export:
+            Name: !Sub '${AWS::StackName}-ec2-velociraptor-public-ip2'
