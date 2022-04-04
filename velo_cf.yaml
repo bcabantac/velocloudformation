@@ -1,5 +1,6 @@
 #Author: Bryant Cabantac
 #https://github.com/bcabantac/velocloudformation
+#https://medium.com/@bryantcabantac/deploying-velocriptor-in-aws-using-cloudformation-scaling-forensic-acquisition-7ab4678d7e2a
 
 AWSTemplateFormatVersion: '2010-09-09'
 
