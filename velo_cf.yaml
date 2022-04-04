@@ -184,6 +184,7 @@ Resources:
          Properties:
             #Domain: vpc
             #!Ref pVpcID
+            # update AllocationID with your elastic IP's eipalloc value
             AllocationId : <enter eipalloc-xxxxxxxxx>
             InstanceId: !Ref rVelociraptor    
     
